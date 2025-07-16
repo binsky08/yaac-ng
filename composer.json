@@ -1,6 +1,6 @@
 {
-  "name": "afosto/yaac",
-  "description": "Yet Another ACME client: a decoupled LetsEncrypt client",
+  "name": "binsky/yaac-ng",
+  "description": "Yet Another ACME client (Next-Gen): a decoupled LetsEncrypt client",
   "type": "package",
   "keywords": [
     "afosto",
@@ -11,23 +11,27 @@
     "encrypt",
     "letsencrypt"
   ],
-  "homepage": "https://afosto.com",
   "license": "Apache-2.0",
   "authors": [
     {
       "name": "Afosto Team",
       "homepage": "https://afosto.com"
+    },
+    {
+      "name": "binsky",
+      "email": "timo@binsky.org",
+      "homepage": "https://binsky.org",
+      "role": "Developer"
     }
   ],
   "autoload": {
     "psr-4": {
-      "Afosto\\Acme\\": "./src"
+      "binsky\\yaac\\": "./src"
     }
   },
   "require": {
     "guzzlehttp/guzzle": "^6.3|^7.0",
     "league/flysystem": "^1.0|^3.0",
-
     "ext-openssl": "*",
     "ext-json": "*"
   }

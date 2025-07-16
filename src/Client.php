@@ -1,12 +1,12 @@
 <?php
 
-namespace Afosto\Acme;
+namespace binsky\yaac;
 
-use Afosto\Acme\Data\Account;
-use Afosto\Acme\Data\Authorization;
-use Afosto\Acme\Data\Certificate;
-use Afosto\Acme\Data\Challenge;
-use Afosto\Acme\Data\Order;
+use binsky\yaac\Data\Account;
+use binsky\yaac\Data\Authorization;
+use binsky\yaac\Data\Certificate;
+use binsky\yaac\Data\Challenge;
+use binsky\yaac\Data\Order;
 use GuzzleHttp\Client as HttpClient;
 use GuzzleHttp\Exception\ClientException;
 use GuzzleHttp\Exception\RequestException;

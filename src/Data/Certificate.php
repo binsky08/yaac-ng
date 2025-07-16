@@ -1,8 +1,8 @@
 <?php
 
-namespace Afosto\Acme\Data;
+namespace binsky\yaac\Data;
 
-use Afosto\Acme\Helper;
+use binsky\yaac\Helper;
 
 class Certificate
 {

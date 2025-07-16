@@ -1,9 +1,9 @@
 <?php
 
-namespace Afosto\Acme\Data;
+namespace binsky\yaac\Data;
 
-use Afosto\Acme\Client;
-use Afosto\Acme\Helper;
+use binsky\yaac\Client;
+use binsky\yaac\Helper;
 
 class Authorization
 {

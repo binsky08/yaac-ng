@@ -1,16 +1,17 @@
-# yaac - Yet another ACME client
+# yaac-ng - Yet another ACME client (Next-Gen)
 
 Written in PHP, this client aims to be a simplified and decoupled Let’s Encrypt client, based on [ACME V2](https://tools.ietf.org/html/rfc8555).
+This fork of [afosto/yaac](https://github.com/afosto/yaac) combines some fixes and improvements,
+as the original project seems nearly unmaintained.
+
+This is **not** a simple drop-in for the `afosto/yaac` package, since I changed namespaces, classes and code structure.
 
 ## Decoupled from a filesystem or webserver
 
-Instead of, for example writing the certificate to the disk under an nginx configuration, this client just returns the 
+Instead of, for example, writing the certificate to the disk under an nginx configuration, this client just returns the 
 data (the certificate and private key).
 
 ## Why
-
-Why would I need this package? At Afosto we run our software in a multi-tenant setup, as any other SaaS would do, and
-therefore we cannot make use of the many clients that are already out there. 
 
 Almost all clients are coupled to a type of webserver or a fixed (set of) domain(s). This package can be extremely 
 useful in case you need to dynamically fetch and install certificates.
@@ -32,7 +33,7 @@ client and you can start requesting certificates.
 
 Installing this package is done easily with composer. 
 ```bash
-composer require afosto/yaac
+composer require binsky/yaac-ng
 ```
 
 ### Instantiate the client
@@ -42,9 +43,9 @@ decide whether you want to issue `Fake LE Intermediate X1` (staging: `MODE_STAGI
 (live: `MODE_LIVE`, use for production) certificates.
 
 ```php
-use League\Flysystem\Filesystem;
+use binsky\yaac\Client;
 use League\Flysystem\Adapter\Local;
-use Afosto\Acme\Client;
+use League\Flysystem\Filesystem;
  
 //Prepare flysystem
 $adapter = new Local('data');
@@ -203,7 +204,11 @@ file_put_contents('private.key', $certificate->getPrivateKey());
 
 ### Who is using it?
 
-Are you using this package, would love to know. Please send a PR to enlist your project or company. 
+Are you using this package? I would love to know.
+Please send a PR to enlist your project or company.
+
+#### Public users of the original afosto/yaac package
+
 - [Afosto SaaS BV](https://afosto.com)
 - [Aitrex - Free Let's Encrypt SSL Certificate Generator](https://aitrex.com/freessl.php)
 - [Web Whales](https://webwhales.nl)

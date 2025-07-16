@@ -1,7 +1,7 @@
 <?php
 
 
-namespace Afosto\Acme\Data;
+namespace binsky\yaac\Data;
 
 class Order
 {

@@ -1,8 +1,6 @@
 <?php
 
-namespace Afosto\Acme;
-
-use GuzzleHttp\Exception\ClientException;
+namespace binsky\yaac;
 
 /**
  * Class Helper
