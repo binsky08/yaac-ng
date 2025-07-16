@@ -2,6 +2,12 @@
 
 namespace binsky\yaac;
 
+use binsky\yaac\Exceptions\CertificateParsingException;
+use binsky\yaac\Exceptions\CertificateSigningRequestException;
+use binsky\yaac\Exceptions\OpensslKeyParsingException;
+use DateTime;
+use OpenSSLAsymmetricKey;
+
 /**
  * Class Helper
  * This class contains helper methods for certificate handling
@@ -9,14 +15,13 @@ namespace binsky\yaac;
  */
 class Helper
 {
-
     /**
      * Formatter
      * @param $pem
      * @return false|string
      * @see https://eidson.info/post/php_eol_is_broken
      */
-    public static function toDer($pem)
+    public static function toDer($pem): false|string
     {
         $lines = preg_split('/\n|\r\n?/', $pem);
         $lines = array_slice($lines, 1, -1);
@@ -29,16 +34,16 @@ class Helper
      *
      * @param $certificate
      *
-     * @return \DateTime
-     * @throws \Exception
+     * @return DateTime
+     * @throws CertificateParsingException
      */
-    public static function getCertExpiryDate($certificate): \DateTime
+    public static function getCertExpiryDate($certificate): DateTime
     {
         $info = openssl_x509_parse($certificate);
         if ($info === false) {
-            throw new \Exception('Could not parse certificate');
+            throw new CertificateParsingException('Could not parse certificate');
         }
-        $dateTime = new \DateTime();
+        $dateTime = new DateTime();
         $dateTime->setTimestamp($info['validTo_time_t']);
 
         return $dateTime;
@@ -47,11 +52,11 @@ class Helper
     /**
      * Get a new key
      *
+     * @param int $keyLength
      * @return string
      */
     public static function getNewKey(int $keyLength): string
     {
-
         $key = openssl_pkey_new([
             'private_key_bits' => $keyLength,
             'private_key_type' => OPENSSL_KEYTYPE_RSA,
@@ -68,7 +73,7 @@ class Helper
      * @param       $key
      *
      * @return string
-     * @throws \Exception
+     * @throws CertificateSigningRequestException
      */
     public static function getCsr(array $domains, $key): string
     {
@@ -89,25 +94,23 @@ class Helper
         file_put_contents($fn, implode("\n", $config));
         $csr = openssl_csr_new([
             'countryName' => 'NL',
-            'commonName'  => $primaryDomain,
+            'commonName' => $primaryDomain,
         ], $key, [
-            'config'         => $fn,
+            'config' => $fn,
             'req_extensions' => 'SAN',
-            'digest_alg'     => 'sha512',
+            'digest_alg' => 'sha512',
         ]);
         unlink($fn);
 
         if ($csr === false) {
-            throw new \Exception('Could not create a CSR');
+            throw new CertificateSigningRequestException('Could not create a CSR');
         }
 
-        if (openssl_csr_export($csr, $result) == false) {
-            throw new \Exception('CRS export failed');
+        if (!openssl_csr_export($csr, $result)) {
+            throw new CertificateSigningRequestException('CRS export failed');
         }
 
-        $result = trim($result);
-
-        return $result;
+        return trim($result);
     }
 
     /**
@@ -125,24 +128,25 @@ class Helper
     /**
      * Get the key information
      *
-     * @return array
-     * @throws \Exception
+     * @param OpenSSLAsymmetricKey $key
+     * @return array ["bits" => "int", "key" => "string", "rsa" => "array", "dsa" => "array", "dh" => "array", "ec" => "array", "type" => "int"]
+     * @throws OpensslKeyParsingException
      */
-    public static function getKeyDetails($key): array
+    public static function getKeyDetails(OpenSSLAsymmetricKey $key): array
     {
         $accountDetails = openssl_pkey_get_details($key);
         if ($accountDetails === false) {
-            throw new \Exception('Could not load account details');
+            throw new OpensslKeyParsingException('Could not load account details');
         }
 
         return $accountDetails;
     }
 
     /**
-     * Split a two certificate bundle into separate multi line string certificates
+     * Split a two certificate bundle into separate multi-line string certificates
      * @param string $chain
-     * @return array
-     * @throws \Exception
+     * @return string[] [$domain, $intermediate]
+     * @throws CertificateParsingException
      */
     public static function splitCertificate(string $chain): array
     {
@@ -157,7 +161,7 @@ class Helper
         $intermediate = $certificates['intermediate'] ?? null;
 
         if (!$domain || !$intermediate) {
-            throw new \Exception('Could not parse certificate string');
+            throw new CertificateParsingException('Could not parse certificate string');
         }
 
         return [$domain, $intermediate];

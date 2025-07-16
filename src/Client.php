@@ -7,10 +7,19 @@ use binsky\yaac\Data\Authorization;
 use binsky\yaac\Data\Certificate;
 use binsky\yaac\Data\Challenge;
 use binsky\yaac\Data\Order;
+use binsky\yaac\Exceptions\CertificateParsingException;
+use binsky\yaac\Exceptions\CertificateSigningRequestException;
+use binsky\yaac\Exceptions\GenericYaacException;
+use binsky\yaac\Exceptions\OpensslKeyParsingException;
+use binsky\yaac\Exceptions\OpensslSignatureGenerationException;
+use DateTime;
 use GuzzleHttp\Client as HttpClient;
-use GuzzleHttp\Exception\ClientException;
-use GuzzleHttp\Exception\RequestException;
+use GuzzleHttp\Exception\GuzzleException;
+use GuzzleHttp\Utils;
 use League\Flysystem\Filesystem;
+use League\Flysystem\FilesystemException;
+use LogicException;
+use OpenSSLAsymmetricKey;
 use Psr\Http\Message\ResponseInterface;
 
 class Client
@@ -60,55 +69,15 @@ class Client
      */
     const VALIDATION_DNS = 'dns-01';
 
-    /**
-     * @var string
-     */
-    protected $nonce;
-
-    /**
-     * @var Account
-     */
-    protected $account;
-
-    /**
-     * @var array
-     */
-    protected $privateKeyDetails;
-
-    /**
-     * @var string
-     */
-    protected $accountKey;
-
-    /**
-     * @var Filesystem
-     */
-    protected $filesystem;
-
-    /**
-     * @var array
-     */
-    protected $directories = [];
-
-    /**
-     * @var array
-     */
-    protected $header = [];
-
-    /**
-     * @var string
-     */
-    protected $digest;
-
-    /**
-     * @var HttpClient
-     */
-    protected $httpClient;
-
-    /**
-     * @var array
-     */
-    protected $config;
+    protected string $nonce;
+    protected Account $account;
+    protected array $privateKeyDetails;
+    protected string $accountKey;
+    protected Filesystem $filesystem;
+    protected array $directories = [];
+    protected array $header = [];
+    protected string $digest;
+    protected HttpClient $httpClient;
 
     /**
      * Client constructor.
@@ -120,19 +89,24 @@ class Client
      * @type string $basePath The base path for the filesystem (used to store account information and csr / keys
      * @type string $username The acme username
      * @type string $source_ip The source IP for Guzzle (via curl.options) to bind to (defaults to 0.0.0.0 [OS default])
-     * }
+     *
+     * @throws FilesystemException
+     * @throws GenericYaacException
+     * @throws GuzzleException
+     * @throws OpensslKeyParsingException
+     * @throws OpensslSignatureGenerationException
+     * @throws LogicException
      */
-    public function __construct($config = [])
+    public function __construct(protected array $config = [])
     {
-        $this->config = $config;
         if ($this->getOption('fs', false)) {
             $this->filesystem = $this->getOption('fs');
         } else {
-            throw new \LogicException('No filesystem option supplied');
+            throw new LogicException('No filesystem option supplied');
         }
 
         if ($this->getOption('username', false) === false) {
-            throw new \LogicException('Username not provided');
+            throw new LogicException('Username not provided');
         }
 
         $this->init();
@@ -143,7 +117,12 @@ class Client
      *
      * @param $id
      * @return Order
-     * @throws \Exception
+     * @throws FilesystemException
+     * @throws GenericYaacException
+     * @throws GuzzleException
+     * @throws OpensslKeyParsingException
+     * @throws OpensslSignatureGenerationException
+     * @throws \Exception when DateTime cannot be constructed in \binsky\yaac\Data\Order::__construct
      */
     public function getOrder($id): Order
     {
@@ -173,7 +152,11 @@ class Client
      *
      * @param Order $order
      * @return bool
-     * @throws \Exception
+     * @throws FilesystemException
+     * @throws GenericYaacException
+     * @throws GuzzleException
+     * @throws OpensslKeyParsingException
+     * @throws OpensslSignatureGenerationException
      */
     public function isReady(Order $order): bool
     {
@@ -187,7 +170,12 @@ class Client
      *
      * @param array $domains
      * @return Order
-     * @throws \Exception
+     * @throws FilesystemException
+     * @throws GenericYaacException
+     * @throws GuzzleException
+     * @throws OpensslKeyParsingException
+     * @throws OpensslSignatureGenerationException
+     * @throws \Exception when DateTime cannot be constructed in \binsky\yaac\Data\Order::__construct
      */
     public function createOrder(array $domains): Order
     {
@@ -195,7 +183,7 @@ class Client
         foreach ($domains as $domain) {
             $identifiers[] =
                 [
-                    'type'  => 'dns',
+                    'type' => 'dns',
                     'value' => $domain,
                 ];
         }
@@ -209,7 +197,8 @@ class Client
         ));
 
         $data = json_decode((string)$response->getBody(), true);
-        $order = new Order(
+
+        return new Order(
             $domains,
             $response->getHeaderLine('location'),
             $data['status'],
@@ -218,9 +207,6 @@ class Client
             $data['authorizations'],
             $data['finalize']
         );
-
-
-        return $order;
     }
 
     /**
@@ -228,7 +214,11 @@ class Client
      *
      * @param Order $order
      * @return array|Authorization[]
-     * @throws \Exception
+     * @throws FilesystemException
+     * @throws GuzzleException
+     * @throws OpensslKeyParsingException
+     * @throws OpensslSignatureGenerationException
+     * @throws \Exception when DateTime cannot be constructed in \binsky\yaac\Data\Authorization::__construct
      */
     public function authorize(Order $order): array
     {
@@ -263,8 +253,9 @@ class Client
      * @param string $type
      * @param int $maxAttempts
      * @return bool
+     * @throws GuzzleException
      */
-    public function selfTest(Authorization $authorization, $type = self::VALIDATION_HTTP, $maxAttempts = 15): bool
+    public function selfTest(Authorization $authorization, string $type = self::VALIDATION_HTTP, int $maxAttempts = 15): bool
     {
         if ($type == self::VALIDATION_HTTP) {
             return $this->selfHttpTest($authorization, $maxAttempts);
@@ -280,7 +271,10 @@ class Client
      * @param Challenge $challenge
      * @param int $maxAttempts
      * @return bool
-     * @throws \Exception
+     * @throws FilesystemException
+     * @throws GuzzleException
+     * @throws OpensslKeyParsingException
+     * @throws OpensslSignatureGenerationException
      */
     public function validate(Challenge $challenge, int $maxAttempts = 15): bool
     {
@@ -304,7 +298,7 @@ class Client
             $maxAttempts--;
         } while ($maxAttempts > 0 && $data['status'] != 'valid');
 
-        return (isset($data['status']) && $data['status'] == 'valid');
+        return isset($data['status']) && $data['status'] == 'valid';
     }
 
     /**
@@ -312,7 +306,12 @@ class Client
      *
      * @param Order $order
      * @return Certificate
-     * @throws \Exception
+     * @throws CertificateParsingException
+     * @throws CertificateSigningRequestException
+     * @throws FilesystemException
+     * @throws GuzzleException
+     * @throws OpensslKeyParsingException
+     * @throws OpensslSignatureGenerationException
      */
     public function getCertificate(Order $order): Certificate
     {
@@ -333,7 +332,7 @@ class Client
             $data['certificate'],
             $this->signPayloadKid(null, $data['certificate'])
         );
-        $chain = $str = preg_replace('/^[ \t]*[\r\n]+/m', '', (string)$certificateResponse->getBody());
+        $chain = preg_replace('/^[ \t]*[\r\n]+/m', '', (string)$certificateResponse->getBody());
         return new Certificate($privateKey, $csr, $chain);
     }
 
@@ -342,7 +341,11 @@ class Client
      * Return LE account information
      *
      * @return Account
-     * @throws \Exception
+     * @throws FilesystemException
+     * @throws GenericYaacException
+     * @throws GuzzleException
+     * @throws OpensslKeyParsingException
+     * @throws OpensslSignatureGenerationException
      */
     public function getAccount(): Account
     {
@@ -358,7 +361,7 @@ class Client
 
         $data = json_decode((string)$response->getBody(), true);
         $accountURL = $response->getHeaderLine('Location');
-        $date = (new \DateTime())->setTimestamp(strtotime($data['createdAt']));
+        $date = (new DateTime())->setTimestamp(strtotime($data['createdAt']));
         return new Account($date, ($data['status'] == 'valid'), $accountURL);
     }
 
@@ -366,7 +369,7 @@ class Client
      * Returns the ACME api configured Guzzle Client
      * @return HttpClient
      */
-    protected function getHttpClient()
+    protected function getHttpClient(): HttpClient
     {
         if ($this->httpClient === null) {
             $config = [
@@ -383,14 +386,14 @@ class Client
     }
 
     /**
-     * Returns a Guzzle Client configured for self test
+     * Returns a Guzzle Client configured for self-test
      * @return HttpClient
      */
-    protected function getSelfTestClient()
+    protected function getSelfTestClient(): HttpClient
     {
         return new HttpClient([
-            'verify'          => false,
-            'timeout'         => 10,
+            'verify' => false,
+            'timeout' => 10,
             'connect_timeout' => 3,
             'allow_redirects' => true,
         ]);
@@ -402,7 +405,7 @@ class Client
      * @param $maxAttempts
      * @return bool
      */
-    protected function selfHttpTest(Authorization $authorization, $maxAttempts)
+    protected function selfHttpTest(Authorization $authorization, $maxAttempts): bool
     {
         do {
             $maxAttempts--;
@@ -416,7 +419,8 @@ class Client
                 if ($contents == $authorization->getFile()->getContents()) {
                     return true;
                 }
-            } catch (RequestException $e) {
+            } catch (GuzzleException $e) {
+                // ignore cause the reason could be a not yet fully set-up challenge webserver
             }
         } while ($maxAttempts > 0);
 
@@ -428,8 +432,9 @@ class Client
      * @param Authorization $authorization
      * @param $maxAttempts
      * @return bool
+     * @throws GuzzleException
      */
-    protected function selfDNSTest(Authorization $authorization, $maxAttempts)
+    protected function selfDNSTest(Authorization $authorization, $maxAttempts): bool
     {
         do {
             $response = $this->getSelfTestDNSClient()->get(
@@ -462,12 +467,12 @@ class Client
      * Return the preconfigured client to call Cloudflare's DNS API
      * @return HttpClient
      */
-    protected function getSelfTestDNSClient()
+    protected function getSelfTestDNSClient(): HttpClient
     {
         return new HttpClient([
-            'base_uri'        => 'https://cloudflare-dns.com',
+            'base_uri' => 'https://cloudflare-dns.com',
             'connect_timeout' => 10,
-            'headers'         => [
+            'headers' => [
                 'Accept' => 'application/dns-json',
             ],
         ]);
@@ -475,12 +480,17 @@ class Client
 
     /**
      * Initialize the client
+     * @throws FilesystemException
+     * @throws GenericYaacException
+     * @throws GuzzleException
+     * @throws OpensslKeyParsingException
+     * @throws OpensslSignatureGenerationException
      */
-    protected function init()
+    protected function init(): void
     {
         //Load the directories from the LE api
         $response = $this->getHttpClient()->get('/directory');
-        $result = \GuzzleHttp\json_decode((string)$response->getBody(), true);
+        $result = Utils::jsonDecode((string)$response->getBody(), true);
         $this->directories = $result;
 
         //Prepare LE account
@@ -489,7 +499,11 @@ class Client
         $this->account = $this->getAccount();
     }
 
-    protected function loadKeys()
+    /**
+     * Make sure a private key is in place before calling this function, otherwise a new one will be generated and stored.
+     * @throws FilesystemException
+     */
+    protected function loadKeys(): void
     {
         //Make sure a private key is in place
         if ($this->getFilesystem()->has($this->getPath('account.pem')) === false) {
@@ -506,15 +520,19 @@ class Client
     /**
      * Agree to the terms of service
      *
-     * @throws \Exception
+     * @throws FilesystemException
+     * @throws GuzzleException
+     * @throws OpensslKeyParsingException
+     * @throws OpensslSignatureGenerationException
+     * @throws GenericYaacException
      */
-    protected function tosAgree()
+    protected function tosAgree(): void
     {
         $this->request(
             $this->getUrl(self::DIRECTORY_NEW_ACCOUNT),
             $this->signPayloadJWK(
                 [
-                    'contact'              => [
+                    'contact' => [
                         'mailto:' . $this->getOption('username'),
                     ],
                     'termsOfServiceAgreed' => true,
@@ -527,24 +545,24 @@ class Client
     /**
      * Get a formatted path
      *
-     * @param null $path
+     * @param string|null $path
      * @return string
      */
-    protected function getPath($path = null): string
+    protected function getPath(string $path = null): string
     {
         $userDirectory = preg_replace('/[^a-z0-9]+/', '-', strtolower($this->getOption('username')));
 
         return $this->getOption(
-            'basePath',
-            'le'
-        ) . DIRECTORY_SEPARATOR . $userDirectory . ($path === null ? '' : DIRECTORY_SEPARATOR . $path);
+                'basePath',
+                'le'
+            ) . DIRECTORY_SEPARATOR . $userDirectory . ($path === null ? '' : DIRECTORY_SEPARATOR . $path);
     }
 
     /**
      * Return the Flysystem filesystem
-     * @return Filesystem
+     * @return Filesystem|null
      */
-    protected function getFilesystem(): Filesystem
+    protected function getFilesystem(): Filesystem|null
     {
         return $this->filesystem;
     }
@@ -557,7 +575,7 @@ class Client
      *
      * @return mixed|null
      */
-    protected function getOption($key, $default = null)
+    protected function getOption($key, $default = null): mixed
     {
         if (isset($this->config[$key])) {
             return $this->config[$key];
@@ -570,7 +588,7 @@ class Client
      * Get key fingerprint
      *
      * @return string
-     * @throws \Exception
+     * @throws FilesystemException|OpensslKeyParsingException
      */
     protected function getDigest(): string
     {
@@ -584,24 +602,21 @@ class Client
     /**
      * Send a request to the LE API
      *
-     * @param $url
+     * @param string $url
      * @param array $payload
      * @param string $method
      * @return ResponseInterface
+     * @throws GuzzleException
      */
-    protected function request($url, $payload = [], $method = 'POST'): ResponseInterface
+    protected function request(string $url, array $payload = [], string $method = 'POST'): ResponseInterface
     {
-        try {
-            $response = $this->getHttpClient()->request($method, $url, [
-                'json'    => $payload,
-                'headers' => [
-                    'Content-Type' => 'application/jose+json',
-                ]
-            ]);
-            $this->nonce = $response->getHeaderLine('replay-nonce');
-        } catch (ClientException $e) {
-            throw $e;
-        }
+        $response = $this->getHttpClient()->request($method, $url, [
+            'json' => $payload,
+            'headers' => [
+                'Content-Type' => 'application/jose+json',
+            ]
+        ]);
+        $this->nonce = $response->getHeaderLine('replay-nonce');
 
         return $response;
     }
@@ -609,36 +624,35 @@ class Client
     /**
      * Get the LE directory path
      *
-     * @param $directory
+     * @param string $directory
      *
      * @return mixed
-     * @throws \Exception
+     * @throws GenericYaacException
      */
-    protected function getUrl($directory): string
+    protected function getUrl(string $directory): string
     {
         if (isset($this->directories[$directory])) {
             return $this->directories[$directory];
         }
 
-        throw new \Exception('Invalid directory: ' . $directory . ' not listed');
+        throw new GenericYaacException('Invalid directory: ' . $directory . ' not listed');
     }
 
-
     /**
-     * Get the key
+     * Get the account key
      *
-     * @return bool|resource|string
-     * @throws \Exception
+     * @throws FilesystemException|OpensslKeyParsingException
      */
-    protected function getAccountKey()
+    protected function getAccountKey(): OpenSSLAsymmetricKey
     {
         if ($this->accountKey === null) {
-            $this->accountKey = openssl_pkey_get_private($this->getFilesystem()
-                ->read($this->getPath('account.pem')));
+            $this->accountKey = openssl_pkey_get_private(
+                $this->getFilesystem()->read($this->getPath('account.pem'))
+            );
         }
 
         if ($this->accountKey === false) {
-            throw new \Exception('Invalid account key');
+            throw new OpensslKeyParsingException('Invalid account key');
         }
 
         return $this->accountKey;
@@ -648,14 +662,14 @@ class Client
      * Get the header
      *
      * @return array
-     * @throws \Exception
+     * @throws FilesystemException|OpensslKeyParsingException
      */
     protected function getJWKHeader(): array
     {
         return [
-            'e'   => Helper::toSafeString(Helper::getKeyDetails($this->getAccountKey())['rsa']['e']),
+            'e' => Helper::toSafeString(Helper::getKeyDetails($this->getAccountKey())['rsa']['e']),
             'kty' => 'RSA',
-            'n'   => Helper::toSafeString(Helper::getKeyDetails($this->getAccountKey())['rsa']['n']),
+            'n' => Helper::toSafeString(Helper::getKeyDetails($this->getAccountKey())['rsa']['n']),
         ];
     }
 
@@ -664,20 +678,20 @@ class Client
      *
      * @param $url
      * @return array
-     * @throws \Exception
+     * @throws FilesystemException|GuzzleException|OpensslKeyParsingException
      */
     protected function getJWK($url): array
     {
-        //Require a nonce to be available
+        // requires nonce to be available
         if ($this->nonce === null) {
             $response = $this->getHttpClient()->head($this->directories[self::DIRECTORY_NEW_NONCE]);
             $this->nonce = $response->getHeaderLine('replay-nonce');
         }
         return [
-            'alg'   => 'RS256',
-            'jwk'   => $this->getJWKHeader(),
+            'alg' => 'RS256',
+            'jwk' => $this->getJWKHeader(),
             'nonce' => $this->nonce,
-            'url'   => $url
+            'url' => $url
         ];
     }
 
@@ -685,8 +699,8 @@ class Client
      * Get KID envelope
      *
      * @param $url
-     * @param $kid
      * @return array
+     * @throws GuzzleException
      */
     protected function getKID($url): array
     {
@@ -694,10 +708,10 @@ class Client
         $nonce = $response->getHeaderLine('replay-nonce');
 
         return [
-            "alg"   => "RS256",
-            "kid"   => $this->account->getAccountURL(),
+            "alg" => "RS256",
+            "kid" => $this->account->getAccountURL(),
             "nonce" => $nonce,
-            "url"   => $url
+            "url" => $url
         ];
     }
 
@@ -707,7 +721,7 @@ class Client
      * @param $payload
      * @param $url
      * @return array
-     * @throws \Exception
+     * @throws FilesystemException|OpensslKeyParsingException|OpensslSignatureGenerationException|GuzzleException
      */
     protected function signPayloadJWK($payload, $url): array
     {
@@ -718,12 +732,12 @@ class Client
         $result = openssl_sign($protected . '.' . $payload, $signature, $this->getAccountKey(), "SHA256");
 
         if ($result === false) {
-            throw new \Exception('Could not sign');
+            throw new OpensslSignatureGenerationException('Could not sign');
         }
 
         return [
             'protected' => $protected,
-            'payload'   => $payload,
+            'payload' => $payload,
             'signature' => Helper::toSafeString($signature),
         ];
     }
@@ -734,7 +748,7 @@ class Client
      * @param $payload
      * @param $url
      * @return array
-     * @throws \Exception
+     * @throws FilesystemException|OpensslKeyParsingException|OpensslSignatureGenerationException|GuzzleException
      */
     protected function signPayloadKid($payload, $url): array
     {
@@ -744,12 +758,12 @@ class Client
 
         $result = openssl_sign($protected . '.' . $payload, $signature, $this->getAccountKey(), "SHA256");
         if ($result === false) {
-            throw new \Exception('Could not sign');
+            throw new OpensslSignatureGenerationException('Could not sign');
         }
 
         return [
             'protected' => $protected,
-            'payload'   => $payload,
+            'payload' => $payload,
             'signature' => Helper::toSafeString($signature),
         ];
     }

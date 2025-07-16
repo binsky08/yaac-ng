@@ -3,43 +3,11 @@
 
 namespace binsky\yaac\Data;
 
+use DateTime;
+
 class Order
 {
-
-    /**
-     * @var string
-     */
-    protected $url;
-
-    /**
-     * @var string
-     */
-    protected $status;
-
-    /**
-     * @var \DateTime
-     */
-    protected $expiresAt;
-
-    /**
-     * @var array
-     */
-    protected $identifiers;
-
-    /**
-     * @var array
-     */
-    protected $authorizations;
-
-    /**
-     * @var string
-     */
-    protected $finalizeURL;
-
-    /**
-     * @var array
-     */
-    protected $domains;
+    protected DateTime $expiresAt;
 
     /**
      * Order constructor.
@@ -50,30 +18,24 @@ class Order
      * @param array $identifiers
      * @param array $authorizations
      * @param string $finalizeURL
-     * @throws \Exception
+     * @throws \Exception when DateTime cannot be constructed
      */
     public function __construct(
-        array $domains,
-        string $url,
-        string $status,
-        string $expiresAt,
-        array $identifiers,
-        array $authorizations,
-        string $finalizeURL
-    ) {
+        protected array  $domains,
+        protected string $url,
+        protected string $status,
+        string           $expiresAt,
+        protected array  $identifiers,
+        protected array  $authorizations,
+        protected string $finalizeURL
+    )
+    {
         //Handle the microtime date format
-        if (strpos($expiresAt, '.') !== false) {
+        if (str_contains($expiresAt, '.')) {
             $expiresAt = substr($expiresAt, 0, strpos($expiresAt, '.')) . 'Z';
         }
-        $this->domains = $domains;
-        $this->url = $url;
-        $this->status = $status;
-        $this->expiresAt = (new \DateTime())->setTimestamp(strtotime($expiresAt));
-        $this->identifiers = $identifiers;
-        $this->authorizations = $authorizations;
-        $this->finalizeURL = $finalizeURL;
+        $this->expiresAt = (new DateTime())->setTimestamp(strtotime($expiresAt));
     }
-
 
     /**
      * Returns the order number
@@ -113,15 +75,15 @@ class Order
 
     /**
      * Returns expires at
-     * @return \DateTime
+     * @return DateTime
      */
-    public function getExpiresAt(): \DateTime
+    public function getExpiresAt(): DateTime
     {
         return $this->expiresAt;
     }
 
     /**
-     * Returs domains as identifiers
+     * Returns domains as identifiers
      * @return array
      */
     public function getIdentifiers(): array

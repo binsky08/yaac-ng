@@ -4,32 +4,6 @@ namespace binsky\yaac\Data;
 
 class Challenge
 {
-
-    /**
-     * @var string
-     */
-    protected $authorizationURL;
-
-    /**
-     * @var string
-     */
-    protected $type;
-
-    /**
-     * @var string
-     */
-    protected $status;
-
-    /**
-     * @var string
-     */
-    protected $url;
-
-    /**
-     * @var string
-     */
-    protected $token;
-
     /**
      * Challenge constructor.
      * @param string $authorizationURL
@@ -38,13 +12,14 @@ class Challenge
      * @param string $url
      * @param string $token
      */
-    public function __construct(string $authorizationURL, string $type, string $status, string $url, string $token)
+    public function __construct(
+        protected string $authorizationURL,
+        protected string $type,
+        protected string $status,
+        protected string $url,
+        protected string $token
+    )
     {
-        $this->authorizationURL = $authorizationURL;
-        $this->type = $type;
-        $this->status = $status;
-        $this->url = $url;
-        $this->token = $token;
     }
 
     /**

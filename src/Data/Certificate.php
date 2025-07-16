@@ -2,53 +2,29 @@
 
 namespace binsky\yaac\Data;
 
+use binsky\yaac\Exceptions\CertificateParsingException;
 use binsky\yaac\Helper;
+use DateTime;
 
 class Certificate
 {
-
-    /**
-     * @var string
-     */
-    protected $privateKey;
-
-    /**
-     * @var string
-     */
-    protected $chain;
-
-    /**
-     * @var string
-     */
-    protected $certificate;
-
-    /**
-     * @var string
-     */
-    protected $intermediateCertificate;
-
-    /**
-     * @var string
-     */
-    protected $csr;
-
-    /**
-     * @var \DateTime
-     */
-    protected $expiryDate;
+    protected string $certificate;
+    protected string $intermediateCertificate;
+    protected DateTime $expiryDate;
 
     /**
      * Certificate constructor.
-     * @param $privateKey
-     * @param $csr
-     * @param $chain
-     * @throws \Exception
+     * @param string $privateKey
+     * @param string $csr
+     * @param string $chain
+     * @throws CertificateParsingException
      */
-    public function __construct($privateKey, $csr, $chain)
+    public function __construct(
+        protected string $privateKey,
+        protected string $csr,
+        protected string $chain
+    )
     {
-        $this->privateKey = $privateKey;
-        $this->csr = $csr;
-        $this->chain = $chain;
         list($this->certificate, $this->intermediateCertificate) = Helper::splitCertificate($chain);
         $this->expiryDate = Helper::getCertExpiryDate($chain);
     }
@@ -64,26 +40,26 @@ class Certificate
 
     /**
      * Get the expiry date of the current certificate
-     * @return \DateTime
+     * @return DateTime
      */
-    public function getExpiryDate(): \DateTime
+    public function getExpiryDate(): DateTime
     {
         return $this->expiryDate;
     }
 
     /**
-     * Return the certificate as a multi line string, by default it includes the intermediate certificate as well
+     * Return the certificate as a multi-line string. By default, it includes the intermediate certificate as well.
      *
      * @param bool $asChain
      * @return string
      */
-    public function getCertificate($asChain = true): string
+    public function getCertificate(bool $asChain = true): string
     {
         return $asChain ? $this->chain : $this->certificate;
     }
 
     /**
-     * Return the intermediate certificate as a multi line string
+     * Return the intermediate certificate as a multi-line string
      * @return string
      */
     public function getIntermediate(): string
@@ -92,7 +68,7 @@ class Certificate
     }
 
     /**
-     * Return the private key as a multi line string
+     * Return the private key as a multi-line string
      * @return string
      */
     public function getPrivateKey(): string

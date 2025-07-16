@@ -4,49 +4,34 @@ namespace binsky\yaac\Data;
 
 use binsky\yaac\Client;
 use binsky\yaac\Helper;
+use DateTime;
 
 class Authorization
 {
-
-    /**
-     * @var string
-     */
-    protected $domain;
-
-    /**
-     * @var \DateTime
-     */
-    protected $expires;
+    protected DateTime $expires;
 
     /**
      * @var Challenge[]
      */
-    protected $challenges = [];
-
-    /**
-     * @var string
-     */
-    protected $digest;
+    protected array $challenges = [];
 
     /**
      * Authorization constructor.
      * @param string $domain
      * @param string $expires
      * @param string $digest
-     * @throws \Exception
+     * @throws \Exception when DateTime cannot be constructed
      */
-    public function __construct(string $domain, string $expires, string $digest)
+    public function __construct(protected string $domain, string $expires, protected string $digest)
     {
-        $this->domain = $domain;
-        $this->expires = (new \DateTime())->setTimestamp(strtotime($expires));
-        $this->digest = $digest;
+        $this->expires = (new DateTime())->setTimestamp(strtotime($expires));
     }
 
     /**
      * Add a challenge to the authorization
      * @param Challenge $challenge
      */
-    public function addChallenge(Challenge $challenge)
+    public function addChallenge(Challenge $challenge): void
     {
         $this->challenges[] = $challenge;
     }
@@ -63,9 +48,9 @@ class Authorization
 
     /**
      * Return the expiry of the authorization
-     * @return \DateTime
+     * @return DateTime
      */
-    public function getExpires(): \DateTime
+    public function getExpires(): DateTime
     {
         return $this->expires;
     }
@@ -83,7 +68,7 @@ class Authorization
      * Return the HTTP challenge
      * @return Challenge|bool
      */
-    public function getHttpChallenge()
+    public function getHttpChallenge(): Challenge|bool
     {
         foreach ($this->getChallenges() as $challenge) {
             if ($challenge->getType() == Client::VALIDATION_HTTP) {
@@ -97,7 +82,7 @@ class Authorization
     /**
      * @return Challenge|bool
      */
-    public function getDnsChallenge()
+    public function getDnsChallenge(): Challenge|bool
     {
         foreach ($this->getChallenges() as $challenge) {
             if ($challenge->getType() == Client::VALIDATION_DNS) {
@@ -112,7 +97,7 @@ class Authorization
      * Return File object for the given challenge
      * @return File|bool
      */
-    public function getFile()
+    public function getFile(): File|bool
     {
         $challenge = $this->getHttpChallenge();
         if ($challenge !== false) {
@@ -126,7 +111,7 @@ class Authorization
      *
      * @return Record|bool
      */
-    public function getTxtRecord()
+    public function getTxtRecord(): Record|bool
     {
         $challenge = $this->getDnsChallenge();
         if ($challenge !== false) {

@@ -19,7 +19,7 @@ useful in case you need to dynamically fetch and install certificates.
 
 ## Requirements
 
-- PHP7+
+- PHP 8.0+
 - openssl
 - [Flysystem](http://flysystem.thephpleague.com/) (any adapter would do) - to store the Lets Encrypt account information
 

@@ -4,26 +4,13 @@ namespace binsky\yaac\Data;
 
 class Record
 {
-
-    /**
-     * @var string
-     */
-    protected $name;
-
-    /**
-     * @var string
-     */
-    protected $value;
-
     /**
      * Record constructor.
      * @param string $name
      * @param string $value
      */
-    public function __construct(string $name, string $value)
+    public function __construct(protected string $name, protected string $value)
     {
-        $this->name = $name;
-        $this->value = $value;
     }
 
     /**

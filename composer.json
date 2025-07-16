@@ -33,6 +33,7 @@
     "guzzlehttp/guzzle": "^6.3|^7.0",
     "league/flysystem": "^1.0|^3.0",
     "ext-openssl": "*",
-    "ext-json": "*"
+    "ext-json": "*",
+    "php": "^8.0"
   }
 }

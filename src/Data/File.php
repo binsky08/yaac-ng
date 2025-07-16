@@ -4,26 +4,13 @@ namespace binsky\yaac\Data;
 
 class File
 {
-
-    /**
-     * @var string
-     */
-    protected $filename;
-
-    /**
-     * @var string
-     */
-    protected $contents;
-
     /**
      * File constructor.
      * @param string $filename
      * @param string $contents
      */
-    public function __construct(string $filename, string $contents)
+    public function __construct(protected string $filename, protected string $contents)
     {
-        $this->contents = $contents;
-        $this->filename = $filename;
     }
 
     /**

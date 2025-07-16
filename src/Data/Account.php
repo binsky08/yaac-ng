@@ -2,38 +2,22 @@
 
 namespace binsky\yaac\Data;
 
+use DateTime;
+
 class Account
 {
     /**
-     * @var string
-     */
-    protected $createdAt;
-
-    /**
-     * @var bool
-     */
-    protected $isValid;
-
-    /**
-     * @var string
-     */
-    protected $accountURL;
-
-
-    /**
      * Account constructor.
-     * @param \DateTime $createdAt
+     * @param DateTime $createdAt
      * @param bool $isValid
      * @param string $accountURL
      */
     public function __construct(
-        \DateTime $createdAt,
-        bool $isValid,
-        string $accountURL
-    ) {
-        $this->createdAt = $createdAt;
-        $this->isValid = $isValid;
-        $this->accountURL = $accountURL;
+        protected DateTime $createdAt,
+        protected bool     $isValid,
+        protected string   $accountURL
+    )
+    {
     }
 
     /**
@@ -47,9 +31,9 @@ class Account
 
     /**
      * Return create date for the account
-     * @return \DateTime
+     * @return DateTime
      */
-    public function getCreatedAt(): \DateTime
+    public function getCreatedAt(): DateTime
     {
         return $this->createdAt;
     }
