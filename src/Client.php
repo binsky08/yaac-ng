@@ -136,6 +136,9 @@ class Client
             $domains[] = $identifier['value'];
         }
 
+        // todo: may introduce a AsyncOrder type here?
+        $certificate = (!empty($data['certificate'])) ? $data['certificate'] : '';
+
         return new Order(
             $domains,
             $url,
@@ -143,7 +146,8 @@ class Client
             $data['expires'],
             $data['identifiers'],
             $data['authorizations'],
-            $data['finalize']
+            $data['finalize'],
+            $certificate,
         );
     }
 
@@ -305,6 +309,8 @@ class Client
      * Return a certificate
      *
      * @param Order $order
+     * @param int $maxAttempts number of attempts to fetch an async processed certificate
+     * @param int $interval number of seconds to sleep between the attempts to fetch an async processed certificate
      * @return Certificate
      * @throws CertificateParsingException
      * @throws CertificateSigningRequestException
@@ -313,7 +319,7 @@ class Client
      * @throws OpensslKeyParsingException
      * @throws OpensslSignatureGenerationException
      */
-    public function getCertificate(Order $order): Certificate
+    public function getCertificate(Order $order, int $maxAttempts = 15, int $interval = 1): Certificate
     {
         $privateKey = Helper::getNewKey($this->getOption('key_length', 4096));
         $csr = Helper::getCsr($order->getDomains(), $privateKey);
@@ -328,14 +334,33 @@ class Client
         );
 
         $data = json_decode((string)$response->getBody(), true);
-        $certificateResponse = $this->request(
-            $data['certificate'],
-            $this->signPayloadKid(null, $data['certificate'])
-        );
-        $chain = preg_replace('/^[ \t]*[\r\n]+/m', '', (string)$certificateResponse->getBody());
+
+        $chain = '';
+
+        if (!empty($data['certificate'])) {
+            $chain = $this->getCertificateChain($data['certificate']);
+        } else {
+            if ('processing' == $data['status']) {
+                sleep($interval);
+                do {
+                    $order = $this->getOrder($order->getId());
+
+                    if ('valid' == $order->getStatus()) {
+                        $chain = $this->getCertificateChain($order->getCertificate());
+                        break;
+                    }
+
+                    $maxAttempts--;
+                } while ($maxAttempts > 0);
+            }
+        }
+
+        if (empty($chain)) {
+            throw new \Exception('Could not obtain certificate');
+        }
+
         return new Certificate($privateKey, $csr, $chain);
     }
-
 
     /**
      * Return LE account information
@@ -363,6 +388,25 @@ class Client
         $accountURL = $response->getHeaderLine('Location');
         $date = (new DateTime())->setTimestamp(strtotime($data['createdAt']));
         return new Account($date, ($data['status'] == 'valid'), $accountURL);
+    }
+
+    /**
+     * Return certificate chain
+     *
+     * @param string $certificate
+     * @return string
+     * @throws FilesystemException
+     * @throws GuzzleException
+     * @throws OpensslKeyParsingException
+     * @throws OpensslSignatureGenerationException
+     */
+    private function getCertificateChain($certificate): string
+    {
+        $certificateResponse = $this->request(
+            $certificate,
+            $this->signPayloadKid(null, $certificate)
+        );
+        return preg_replace('/^[ \t]*[\r\n]+/m', '', (string)$certificateResponse->getBody());
     }
 
     /**

@@ -18,6 +18,7 @@ class Order
      * @param array $identifiers
      * @param array $authorizations
      * @param string $finalizeURL
+     * @param string $certificate for asynchronous order support
      * @throws \Exception when DateTime cannot be constructed
      */
     public function __construct(
@@ -27,7 +28,8 @@ class Order
         string           $expiresAt,
         protected array  $identifiers,
         protected array  $authorizations,
-        protected string $finalizeURL
+        protected string $finalizeURL,
+        protected string $certificate = '',
     )
     {
         //Handle the microtime date format
@@ -98,6 +100,15 @@ class Order
     public function getFinalizeURL(): string
     {
         return $this->finalizeURL;
+    }
+
+    /**
+     * Returns certificate
+     * @return string
+     */
+    public function getCertificate(): string
+    {
+        return $this->certificate;
     }
 
     /**
