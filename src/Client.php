@@ -136,7 +136,7 @@ class Client
             $domains[] = $identifier['value'];
         }
 
-        // todo: may introduce a AsyncOrder type here?
+        // certificate provided here only by asynchronous order finalization
         $certificate = (!empty($data['certificate'])) ? $data['certificate'] : '';
 
         return new Order(
@@ -310,16 +310,24 @@ class Client
      *
      * @param Order $order
      * @param int $maxAttempts number of attempts to fetch an async processed certificate
-     * @param int $interval number of seconds to sleep between the attempts to fetch an async processed certificate
+     * @param int $delay number of seconds to sleep between the attempts to fetch an async processed certificate
+     * @param int $respectRetryAfterBelowNSeconds respect "Retry-After" response header if it is below n (=30) seconds.
+     * After this, the attempt-delay combination will be applied if the certificate status is still in processing state.
      * @return Certificate
      * @throws CertificateParsingException
      * @throws CertificateSigningRequestException
      * @throws FilesystemException
+     * @throws GenericYaacException
      * @throws GuzzleException
      * @throws OpensslKeyParsingException
      * @throws OpensslSignatureGenerationException
      */
-    public function getCertificate(Order $order, int $maxAttempts = 15, int $interval = 1): Certificate
+    public function getCertificate(
+        Order $order,
+        int   $maxAttempts = 15,
+        int   $delay = 1,
+        int   $respectRetryAfterBelowNSeconds = 30
+    ): Certificate
     {
         $privateKey = Helper::getNewKey($this->getOption('key_length', 4096));
         $csr = Helper::getCsr($order->getDomains(), $privateKey);
@@ -335,31 +343,79 @@ class Client
 
         $data = json_decode((string)$response->getBody(), true);
 
-        $chain = '';
-
         if (!empty($data['certificate'])) {
             $chain = $this->getCertificateChain($data['certificate']);
         } else {
-            if ('processing' == $data['status']) {
-                sleep($interval);
-                do {
-                    $order = $this->getOrder($order->getId());
-
-                    if ('valid' == $order->getStatus()) {
-                        $chain = $this->getCertificateChain($order->getCertificate());
-                        break;
-                    }
-
-                    $maxAttempts--;
-                } while ($maxAttempts > 0);
-            }
+            $chain = $this->doAsyncOrderFinalization(
+                $order,
+                $data,
+                $response,
+                $maxAttempts,
+                $delay,
+                $respectRetryAfterBelowNSeconds
+            );
         }
 
         if (empty($chain)) {
-            throw new \Exception('Could not obtain certificate');
+            throw new GenericYaacException('Could not obtain certificate');
         }
 
         return new Certificate($privateKey, $csr, $chain);
+    }
+
+    /**
+     * Asynchronous order finalization for a Let's Encrypt certificate, based on RFC8555.
+     * https://www.rfc-editor.org/rfc/rfc8555.html#section-7.4.2:~:text=%22processing%22:%20The%20certificate%20is%20being%20issued
+     *
+     * @return string|null chain string or null
+     * @throws FilesystemException
+     * @throws GenericYaacException
+     * @throws GuzzleException
+     * @throws OpensslKeyParsingException
+     * @throws OpensslSignatureGenerationException
+     */
+    protected function doAsyncOrderFinalization(
+        Order             $initialOrder,
+        mixed             $data,
+        ResponseInterface $response,
+        int               $maxAttempts,
+        int               $delay,
+        int               $respectRetryAfterBelowNSeconds
+    ): string|null
+    {
+        if ('processing' == $data['status']) {
+            $retryAfterLine = $response->getHeaderLine('Retry-After');
+
+            if (!is_numeric($retryAfterLine)) {
+                try {
+                    $retryAfterLine = (new DateTime($retryAfterLine))->getTimestamp() - time();
+                } catch (\Exception $e) {
+                    # disable initial Retry-After sleep in case of a parsing error
+                    $retryAfterLine = 0;
+                }
+            }
+
+            $retryAfterSeconds = (int)$retryAfterLine;
+            $retryAfterSeconds = match (true) {
+                empty($retryAfterSeconds), $retryAfterSeconds < 0 => 0,
+                $retryAfterSeconds > $respectRetryAfterBelowNSeconds => $respectRetryAfterBelowNSeconds,
+                default => $retryAfterSeconds
+            };
+
+            # initial sleep to respect the Retry-After header if not changed by the user
+            sleep($retryAfterSeconds);
+            do {
+                $initialOrder = $this->getOrder($initialOrder->getId());
+
+                if ('valid' == $initialOrder->getStatus()) {
+                    return $this->getCertificateChain($initialOrder->getCertificate());
+                }
+
+                $maxAttempts--;
+                sleep($delay);
+            } while ($maxAttempts > 0);
+        }
+        return null;
     }
 
     /**
