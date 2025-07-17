@@ -13,6 +13,7 @@ use binsky\yaac\Exceptions\GenericYaacException;
 use binsky\yaac\Exceptions\OpensslKeyParsingException;
 use binsky\yaac\Exceptions\OpensslSignatureGenerationException;
 use DateTime;
+use DateTimeInterface;
 use GuzzleHttp\Client as HttpClient;
 use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\Utils;
@@ -72,7 +73,7 @@ class Client
     protected string $nonce;
     protected Account $account;
     protected array $privateKeyDetails;
-    protected string $accountKey;
+    protected OpenSSLAsymmetricKey $accountKey;
     protected Filesystem $filesystem;
     protected array $directories = [];
     protected array $header = [];
@@ -85,6 +86,7 @@ class Client
      * @param array $config
      *
      * @type string $mode The mode for ACME (production / staging)
+     * @type string $baseUriOverride A custom (directory) base URI to use for the ACME API (cannot be supplied when mode is set)
      * @type Filesystem $fs Filesystem for storage of static data
      * @type string $basePath The base path for the filesystem (used to store account information and csr / keys
      * @type string $username The acme username
@@ -109,13 +111,17 @@ class Client
             throw new LogicException('Username not provided');
         }
 
+        if ($this->getOption('baseUriOverride', false) && $this->getOption('mode', false)) {
+            throw new \LogicException('Both baseUri and mode cannot be supplied simultaneously.');
+        }
+
         $this->init();
     }
 
     /**
-     * Get an existing order by ID
+     * Get an existing order by ID or URL
      *
-     * @param $id
+     * @param string $idOrUrl
      * @return Order
      * @throws FilesystemException
      * @throws GenericYaacException
@@ -124,10 +130,16 @@ class Client
      * @throws OpensslSignatureGenerationException
      * @throws \Exception when DateTime cannot be constructed in \binsky\yaac\Data\Order::__construct
      */
-    public function getOrder($id): Order
+    public function getOrder(string $idOrUrl): Order
     {
-        $url = str_replace('new-order', 'order', $this->getUrl(self::DIRECTORY_NEW_ORDER));
-        $url = $url . '/' . $this->getAccount()->getId() . '/' . $id;
+        if (str_starts_with($idOrUrl, 'http')) {
+            $url = $idOrUrl;
+        } else {
+            trigger_error("Warning: Constructing order URL from ID. This may lead to unexpected behavior if the server uses a different base URL for existing orders.", E_USER_WARNING);
+            $url = str_replace('new-order', 'order', $this->getUrl(self::DIRECTORY_NEW_ORDER));
+            $url = $url . '/' . $this->getAccount()->getId() . '/' . $idOrUrl;
+        }
+
         $response = $this->request($url, $this->signPayloadKid(null, $url));
         $data = json_decode((string)$response->getBody(), true);
 
@@ -164,10 +176,9 @@ class Client
      */
     public function isReady(Order $order): bool
     {
-        $order = $this->getOrder($order->getId());
+        $order = $this->getOrder($order->getURL() ?? $order->getId());
         return $order->getStatus() == 'ready';
     }
-
 
     /**
      * Create a new order
@@ -405,10 +416,10 @@ class Client
             # initial sleep to respect the Retry-After header if not changed by the user
             sleep($retryAfterSeconds);
             do {
-                $initialOrder = $this->getOrder($initialOrder->getId());
+                $order = $this->getOrder($initialOrder->getURL() ?? $initialOrder->getId());
 
-                if ('valid' == $initialOrder->getStatus()) {
-                    return $this->getCertificateChain($initialOrder->getCertificate());
+                if ('valid' == $order->getStatus()) {
+                    return $this->getCertificateChain($order->getCertificate());
                 }
 
                 $maxAttempts--;
@@ -442,25 +453,29 @@ class Client
 
         $data = json_decode((string)$response->getBody(), true);
         $accountURL = $response->getHeaderLine('Location');
-        $date = (new DateTime())->setTimestamp(strtotime($data['createdAt']));
+
+        // Use the current date and time if 'createdAt' is not set
+        $createdAt = $data['createdAt'] ?? (new DateTime())->format(DateTimeInterface::ATOM);
+        $date = (new DateTime())->setTimestamp(strtotime($createdAt));
+
         return new Account($date, ($data['status'] == 'valid'), $accountURL);
     }
 
     /**
      * Return certificate chain
      *
-     * @param string $certificate
+     * @param string $certificateUrl
      * @return string
      * @throws FilesystemException
      * @throws GuzzleException
      * @throws OpensslKeyParsingException
      * @throws OpensslSignatureGenerationException
      */
-    private function getCertificateChain($certificate): string
+    private function getCertificateChain(string $certificateUrl): string
     {
         $certificateResponse = $this->request(
-            $certificate,
-            $this->signPayloadKid(null, $certificate)
+            $certificateUrl,
+            $this->signPayloadKid(null, $certificateUrl)
         );
         return preg_replace('/^[ \t]*[\r\n]+/m', '', (string)$certificateResponse->getBody());
     }
@@ -471,11 +486,13 @@ class Client
      */
     protected function getHttpClient(): HttpClient
     {
-        if ($this->httpClient === null) {
+        if (empty($this->httpClient)) {
             $config = [
-                'base_uri' => (
-                ($this->getOption('mode', self::MODE_LIVE) == self::MODE_LIVE) ?
-                    self::DIRECTORY_LIVE : self::DIRECTORY_STAGING),
+                'base_uri' => $this->getOption(
+                    'baseUriOverride',
+                    ($this->getOption('mode', self::MODE_LIVE) == self::MODE_LIVE) ?
+                        self::DIRECTORY_LIVE : self::DIRECTORY_STAGING
+                ),
             ];
             if ($this->getOption('source_ip', false) !== false) {
                 $config['curl.options']['CURLOPT_INTERFACE'] = $this->getOption('source_ip');
@@ -589,9 +606,10 @@ class Client
     protected function init(): void
     {
         //Load the directories from the LE api
-        $response = $this->getHttpClient()->get('/directory');
+        $response = $this->getHttpClient()->get('');
         $result = Utils::jsonDecode((string)$response->getBody(), true);
         $this->directories = $result;
+        print_r($this->directories);
 
         //Prepare LE account
         $this->loadKeys();
@@ -648,7 +666,7 @@ class Client
      * @param string|null $path
      * @return string
      */
-    protected function getPath(string $path = null): string
+    protected function getPath(string|null $path = null): string
     {
         $userDirectory = preg_replace('/[^a-z0-9]+/', '-', strtolower($this->getOption('username')));
 
@@ -692,7 +710,7 @@ class Client
      */
     protected function getDigest(): string
     {
-        if ($this->digest === null) {
+        if (empty($this->digest)) {
             $this->digest = Helper::toSafeString(hash('sha256', json_encode($this->getJWKHeader()), true));
         }
 
@@ -745,7 +763,7 @@ class Client
      */
     protected function getAccountKey(): OpenSSLAsymmetricKey
     {
-        if ($this->accountKey === null) {
+        if (empty($this->accountKey)) {
             $this->accountKey = openssl_pkey_get_private(
                 $this->getFilesystem()->read($this->getPath('account.pem'))
             );
@@ -783,7 +801,7 @@ class Client
     protected function getJWK($url): array
     {
         // requires nonce to be available
-        if ($this->nonce === null) {
+        if (empty($this->nonce)) {
             $response = $this->getHttpClient()->head($this->directories[self::DIRECTORY_NEW_NONCE]);
             $this->nonce = $response->getHeaderLine('replay-nonce');
         }

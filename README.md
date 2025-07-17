@@ -44,11 +44,11 @@ decide whether you want to issue `Fake LE Intermediate X1` (staging: `MODE_STAGI
 
 ```php
 use binsky\yaac\Client;
-use League\Flysystem\Adapter\Local;
+use League\Flysystem\Local\LocalFilesystemAdapter;
 use League\Flysystem\Filesystem;
  
 //Prepare flysystem
-$adapter = new Local('data');
+$adapter = new LocalFilesystemAdapter('data');
 $filesystem = new Filesystem($adapter);
  
 //Construct the client

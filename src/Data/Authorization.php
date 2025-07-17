@@ -122,4 +122,13 @@ class Authorization
 
         return false;
     }
+
+    /**
+     * Return this authorization digest
+     * @return string
+     */
+    public function getDigest(): string
+    {
+        return $this->digest;
+    }
 }
