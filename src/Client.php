@@ -135,7 +135,8 @@ class Client
         if (str_starts_with($idOrUrl, 'http')) {
             $url = $idOrUrl;
         } else {
-            trigger_error("Warning: Constructing order URL from ID. This may lead to unexpected behavior if the server uses a different base URL for existing orders.", E_USER_WARNING);
+            // trigger_error("Warning: Constructing order URL from ID. This may lead to unexpected behavior if the server uses a different base URL for existing orders.", E_USER_WARNING);
+            echo "Warning: Constructing order URL from ID. This may lead to unexpected behavior if the server uses a different base URL for existing orders.";
             $url = str_replace('new-order', 'order', $this->getUrl(self::DIRECTORY_NEW_ORDER));
             $url = $url . '/' . $this->getAccount()->getId() . '/' . $idOrUrl;
         }
@@ -609,7 +610,7 @@ class Client
         $response = $this->getHttpClient()->get('');
         $result = Utils::jsonDecode((string)$response->getBody(), true);
         $this->directories = $result;
-        print_r($this->directories);
+        // print_r($this->directories);
 
         //Prepare LE account
         $this->loadKeys();
